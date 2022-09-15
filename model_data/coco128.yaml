@@ -1,0 +1,5 @@
+path: ./datasets/coco128 
+train: images/train2017 
+val: images/train2017 
+nc: 2
+names: ['person', 'head']

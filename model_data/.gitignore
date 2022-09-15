@@ -1,0 +1,9 @@
+# models
+
+*.names
+*.cfg
+*.onnx
+*.engine
+*.weights
+*.tflite
+*.pt
