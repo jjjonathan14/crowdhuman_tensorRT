@@ -2,6 +2,8 @@ from utils.tensorrt_util import *
 import yaml
 import ctypes
 from cuda import cudart
+from config import cfg
+import os
 
 class ModelFileTensorRT:
     """
@@ -13,7 +15,7 @@ class ModelFileTensorRT:
 
 
 class InferenceTensorRT:
-    def __init__(self, model_file='./model_data/crowdhuman_yolov5m_static.engine', batch_infer=False, target_gpu_id=None, overlay=None):
+    def __init__(self, model_file= os.path.join(cfg.infer.model_directory, cfg.TensorRT.weight_file), batch_infer=False, target_gpu_id=None, overlay=None):
         ctypes.CDLL(cfg.TensorRT.plugin_lib)
         cudart.cudaDeviceSynchronize()
         # load tensor RT wrapper

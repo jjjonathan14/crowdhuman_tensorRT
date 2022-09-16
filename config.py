@@ -37,7 +37,7 @@ __C.PyTorch.dnn = False  # use OpenCV DNN for ONNX inference
 # TensorRT
 __C.TensorRT = edict()
 # DEMO 22-08-19 models
-__C.TensorRT.weight_file = 'crowdhuman_yolov5m_static.engine'
+__C.TensorRT.weight_file = 'crowdhuman_latest_yolov5m_static.engine'
 __C.TensorRT.plugin_lib = "/home/zoomi2022/dinusha/converted_models/20220817/libmyplugins.so"
 __C.TensorRT.model_input_shape = (640, 640)
 __C.TensorRT.batch = False
@@ -48,8 +48,8 @@ __C.TensorRT.batch_size = 1
 # __C.TensorRT.plugin_lib = "/home/zoomi2022/dinusha/converted_models/20220802-2/libmyplugins.so"
 # __C.TensorRT.model_input_shape = (640, 640)
 
-__C.TensorRT.conf_thres = 0.25  # confidence threshold
-__C.TensorRT.iou_thres = 0.45  # NMS IOU threshold
+__C.TensorRT.conf_thres = 0.2  # confidence threshold
+__C.TensorRT.iou_thres = 0.1  # NMS IOU threshold
 
 # Tracking options
 
