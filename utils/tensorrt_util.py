@@ -28,8 +28,8 @@ import pycuda.autoinit
 import yaml
 import torch, torchvision
 
-CONF_THRESH = cfg.TensorRT.conf_thres  # 0.25
-IOU_THRESHOLD = cfg.TensorRT.iou_thres  # 0.45
+CONF_THRESH = 0.5 # cfg.TensorRT.conf_thres  # 0.25
+IOU_THRESHOLD = 0.45 #cfg.TensorRT.iou_thres  # 0.45
 
 
 def get_img_path_batches(batch_size, img_dir):
@@ -93,13 +93,13 @@ class YoLov5TRT(object):
 
         self.lbl_file = lbl_file
 
-        #engine_file_path = self.model_file.weightsPath
-        print('engine path', model_file )
-        engine_file_path = self.model_file
+        engine_file_path = self.model_file.weightsPath
         TRT_LOGGER = trt.Logger(trt.Logger.INFO)
         runtime = trt.Runtime(TRT_LOGGER)
         self.ctx = cuda.Device(0).make_context()
         stream = cuda.Stream()
+        self.conf_thres=cfg.TensorRT.conf_thres
+        self.iou_thres=cfg.TensorRT.iou_thres
 
         self.lbls = yaml.safe_load(open(f'{self.lbl_file}', 'rb').read())['names']
         self.nc = yaml.safe_load(open(f'{self.lbl_file}', 'rb').read())['nc']
@@ -115,13 +115,14 @@ class YoLov5TRT(object):
         host_outputs = []
         cuda_outputs = []
         bindings = []
-        context.set_binding_shape(engine.get_binding_index("images"), (cfg.TensorRT.batch_size, 3, \
+        context.set_binding_shape(0, (cfg.TensorRT.batch_size, 3, \
                                                                         cfg.TensorRT.model_input_shape[0],\
                                                                          cfg.TensorRT.model_input_shape[1]))
 
         for binding in engine:
             print('bingding:', binding, engine.get_binding_shape(binding))
             binding_idx = engine.get_binding_index(binding)
+            print(binding_idx)
             size = trt.volume(context.get_binding_shape(binding_idx)) * engine.max_batch_size
             dtype = trt.nptype(engine.get_binding_dtype(binding))
             # Allocate host and device buffers
@@ -132,6 +133,7 @@ class YoLov5TRT(object):
             # Append to the appropriate list.
             if engine.binding_is_input(binding):
                 self.input_w = engine.get_binding_shape(binding)[-1]
+                print("IN", self.input_w )
                 self.input_h = engine.get_binding_shape(binding)[-2]
                 host_inputs.append(host_mem)
                 cuda_inputs.append(cuda_mem)
@@ -163,12 +165,12 @@ class YoLov5TRT(object):
         cuda_outputs = self.cuda_outputs
         bindings = self.bindings
         # Do image preprocess
-        batch_image_raw = []
+        # batch_image_raw = []
         batch_origin_h = []
         batch_origin_w = []
         batch_input_image = np.empty(shape=[self.batch_size, 3, self.input_h, self.input_w])
         input_image, image_raw, origin_h, origin_w = self.preprocess_image(image_raw)
-        batch_image_raw.append(image_raw)
+        # batch_image_raw.append(image_raw)
         batch_origin_h.append(origin_h)
         batch_origin_w.append(origin_w)
         np.copyto(batch_input_image[0], input_image)
@@ -194,9 +196,10 @@ class YoLov5TRT(object):
 
         detections = host_outputs[0].reshape(1, -1, 5+self.nc)
         detections = torch.Tensor(detections)
-        pred = self.non_max_suppression(detections, CONF_THRESH, IOU_THRESHOLD)
+        pred = self.non_max_suppression(detections,  conf_thres=self.conf_thres, iou_thres=self.iou_thres)
     
         # TODO : update post process function
+        # print("OR", batch_origin_w[0] )
         bboxes_, scores_, names_, classes_ = self.post_process(pred[0], batch_origin_h[0], batch_origin_w[0])
      
         return bboxes_, scores_, names_, classes_
@@ -214,14 +217,14 @@ class YoLov5TRT(object):
         cuda_outputs = self.cuda_outputs
         bindings = self.bindings
         # Do image preprocess
-        batch_image_raw = []
+        # batch_image_raw = []
         batch_origin_h = []
         batch_origin_w = []
         batch_input_image = np.empty(shape=[self.batch_size, 3, self.input_h, self.input_w])
         for i, image_raw in enumerate(raw_image_generator):
             input_image, image_raw, origin_h, origin_w = self.preprocess_image(image_raw)
             # print("ggggggggggg", origin_h, origin_w)
-            batch_image_raw.append(image_raw)
+            # batch_image_raw.append(image_raw)
             batch_origin_h.append(origin_h)
             batch_origin_w.append(origin_w)
             np.copyto(batch_input_image[i], input_image)
@@ -247,7 +250,7 @@ class YoLov5TRT(object):
         detections = host_outputs[0].reshape(self.batch_size, -1, 5 + self.nc)
         # print(detections)
         detections = torch.Tensor(detections)
-        pred = self.non_max_suppression(detections, CONF_THRESH, IOU_THRESHOLD)
+        pred = self.non_max_suppression(detections, conf_thres=self.conf_thres, iou_thres=self.iou_thres)
 
         # TODO : update post process function
         batch_boxes = []
@@ -263,8 +266,9 @@ class YoLov5TRT(object):
 
         return batch_boxes, batch_scores, batch_names, batch_classes
 
-    def non_max_suppression(self, prediction, conf_thres=0.25, iou_thres=0.45, classes=None, agnostic=False,
+    def non_max_suppression(self, prediction, conf_thres, iou_thres, classes=None, agnostic=False,
                             multi_label=False, labels=(), max_det=300):
+        print(conf_thres,iou_thres)
         bs = prediction.shape[0]  # batch size
         nc = prediction.shape[2] - 5  # number of classes
         xc = prediction[..., 4] > conf_thres  # candidates
@@ -333,6 +337,11 @@ class YoLov5TRT(object):
             output[xi] = x[i]
         return output
 
+    def destroy(self):
+        # Remove any stream and cuda mem
+        cudart.cudaStreamDestroy(self.stream)
+        cudart.cudaFree(self.cuda_inputs[0])
+        cudart.cudaFree(self.cuda_outputs[0])
 
     def get_raw_image(self, image_path_batch):
         """
@@ -427,6 +436,12 @@ class YoLov5TRT(object):
             y1 = round((y1 / int(self.input_h)) * orig_height)
             x2 = round((x2 / int(self.input_w)) * orig_width)
             y2 = round((y2 / int(self.input_h)) * orig_height)
+
+            # if self.overlay:
+            #     color = self.colors[list(self.colors)[classid % len(self.colors)]]
+            #     label = "{}: {:.4f}".format(self.lbls[classid], score)
+            #     cv2.rectangle(image_original, (x1, y1), (x2 , y2), color, 2)
+            #     cv2.putText(image_original, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
 
             bboxes_.append([x1, y1, x2 - x1, y2 - y1])
             scores_.append(score)
